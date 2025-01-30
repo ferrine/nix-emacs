@@ -36,20 +36,21 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
 
 (defun nix-create-sandbox-rc (sandbox)
   "Create a new rc file containing the environment for the given SANDBOX."
-  (let* ((sandbox-nixpkgs-path
-          (if (file-remote-p sandbox)
+  (let* ((sandbox-abs-path (file-truename sandbox))
+         (sandbox-nixpkgs-path
+          (if (file-remote-p sandbox-abs-path)
               "" ;; decide later
             (or (and nix-nixpkgs-path (concat "-I nixpkgs=" nix-nixpkgs-path)) "")))
          (command (if sandbox
                       (concat "nix-shell "
                               sandbox-nixpkgs-path
                               " --run 'declare +x shellHook; declare -x; declare -xf' "
-                              (shell-quote-argument (file-local-name sandbox))
+                              (shell-quote-argument (file-local-name sandbox-abs-path))
                               " 2> /dev/null")
                     "bash -c 'declare +x shellHook; declare -x; declare -xf'"
                     ))
          (env-str (shell-command-to-string command))
-        (tmp-file (make-temp-file (concat (temporary-file-directory) "/nix-sandbox-rc-"))))
+         (tmp-file (make-temp-file (concat (temporary-file-directory) "/nix-sandbox-rc-"))))
     (write-region env-str nil tmp-file 'append)
     tmp-file))
 
@@ -58,25 +59,28 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
 
 (defun nix-sandbox-rc (sandbox)
   "Return the rc file for the given SANDBOX or create one."
-  (or (gethash sandbox nix-sandbox-rc-map)
-      (puthash sandbox (nix-create-sandbox-rc sandbox) nix-sandbox-rc-map)))
+  (let ((sandbox-abs-path (file-truename sandbox)))
+    (or (gethash sandbox-abs-path nix-sandbox-rc-map)
+        (puthash sandbox-abs-path (nix-create-sandbox-rc sandbox-abs-path) nix-sandbox-rc-map))))
 
 ;;;###autoload
 (defun nix-shell-command (sandbox &rest args)
   "Assemble a command from ARGS that can be executed in the specified SANDBOX."
   (list "bash" "-c" (format "source %s; %s" (file-local-name (nix-sandbox-rc sandbox))
-                            (mapconcat 'shell-quote-argument args " "))))
+                            (mapconcat #'identity args " "))))
 
 (defun nix-shell-string (sandbox &rest args)
   "Assemble a command string from ARGS that can be executed in the specifed SANDBOX."
-   (combine-and-quote-strings
-    (apply 'nix-shell-command sandbox args)))
+  (combine-and-quote-strings
+   (apply 'nix-shell-command sandbox args)))
 
 ;;;###autoload
 (defun nix-compile (sandbox &rest command)
   "Compile a program using the given COMMAND in SANDBOX."
-  (interactive "Dsandbox: \nMcommand: ")
-  (compile (apply 'nix-shell-string sandbox command)))
+  (interactive "fsandbox: \nMcommand: ")
+  (with-current-buffer (compile (apply 'nix-shell-string sandbox command))
+    (rename-buffer (mapconcat #'identity command " "))
+    (current-buffer)))
 
 ;;;###autoload
 (defun nix-sandbox/nix-shell (sandbox &rest command)
@@ -112,11 +116,11 @@ file is returned.  Otherwise if the directory contains a
               (sandbox-directory
                (funcall map-nil 'expand-file-name
                         (locate-dominating-file path
-                          '(lambda (dir)
-                             (seq-filter
-                              (lambda (candidate)
-                                (not (file-directory-p candidate)))
-                              (directory-files dir t ".*\\.nix$"))))))
+                                                '(lambda (dir)
+                                                   (seq-filter
+                                                    (lambda (candidate)
+                                                      (not (file-directory-p candidate)))
+                                                    (directory-files dir t ".*\\.nix$"))))))
               (shell-nix (and sandbox-directory (concat sandbox-directory "shell.nix"))))
          (if (and sandbox-directory (file-exists-p shell-nix))
              shell-nix
