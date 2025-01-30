@@ -36,21 +36,21 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
 
 (defun nix-create-sandbox-rc (sandbox)
   "Create a new rc file containing the environment for the given SANDBOX."
-  (let* ((sandbox-abs-path (file-truename sandbox))
-         (sandbox-nixpkgs-path
-          (if (file-remote-p sandbox-abs-path)
-              "" ;; decide later
-            (or (and nix-nixpkgs-path (concat "-I nixpkgs=" nix-nixpkgs-path)) "")))
-         (command (if sandbox
-                      (concat "nix-shell "
-                              sandbox-nixpkgs-path
-                              " --run 'declare +x shellHook; declare -x; declare -xf' "
-                              (shell-quote-argument (file-local-name sandbox-abs-path))
-                              " 2> /dev/null")
-                    "bash -c 'declare +x shellHook; declare -x; declare -xf'"
-                    ))
-         (env-str (shell-command-to-string command))
-         (tmp-file (make-temp-file (concat (temporary-file-directory) "/" "nix-sandbox-rc-"))))
+  (when-let* ((sandbox-abs-path (file-truename sandbox))
+              (sandbox-nixpkgs-path
+               (if (file-remote-p sandbox-abs-path)
+                   "" ;; decide later
+                 (or (and nix-nixpkgs-path (concat "-I nixpkgs=" nix-nixpkgs-path)) "")))
+              (command (if sandbox-abs-path
+                           (concat "nix-shell "
+                                   sandbox-nixpkgs-path
+                                   " --run 'declare +x shellHook; declare -x; declare -xf' "
+                                   (shell-quote-argument (file-local-name sandbox-abs-path))
+                                   " 2> /dev/null")
+                         "bash -c 'declare +x shellHook; declare -x; declare -xf'"))
+              (env-str (when (file-exists-p sandbox-abs-path)
+                         (shell-command-to-string command)))
+              (tmp-file (make-temp-file (concat (temporary-file-directory) "/" "nix-sandbox-rc-"))))
     (write-region env-str nil tmp-file 'append)
     tmp-file))
 
@@ -61,7 +61,9 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
   "Return the rc file for the given SANDBOX or create one."
   (let ((sandbox-abs-path (file-truename sandbox)))
     (or (gethash sandbox-abs-path nix-sandbox-rc-map)
-        (puthash sandbox-abs-path (nix-create-sandbox-rc sandbox-abs-path) nix-sandbox-rc-map))))
+        (when-let (sandbox-rc (nix-create-sandbox-rc sandbox-abs-path))
+          (puthash sandbox-abs-path sandbox-rc nix-sandbox-rc-map))
+        (error (format "could not create sandbox for %s" sandbox-abs-path)))))
 
 ;;;###autoload
 (defun nix-shell-command (sandbox &rest args)
