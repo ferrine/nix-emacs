@@ -66,8 +66,12 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
 ;;;###autoload
 (defun nix-shell-command (sandbox &rest args)
   "Assemble a command from ARGS that can be executed in the specified SANDBOX."
-  (list "bash" "-c" (format "source %s; %s" (file-local-name (nix-sandbox-rc sandbox))
-                            (mapconcat #'identity args " "))))
+  (list "bash" "-c" (nix-shell--source-env-prepend sandbox (mapconcat #'shell-quote-argument args " "))))
+
+(defun nix-shell--source-env-prepend (sandbox command)
+  (format "source %s; %s"
+          (file-local-name (nix-sandbox-rc sandbox))
+          command))
 
 (defun nix-shell-string (sandbox &rest args)
   "Assemble a command string from ARGS that can be executed in the specifed SANDBOX."
@@ -75,12 +79,12 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
    (apply 'nix-shell-command sandbox args)))
 
 ;;;###autoload
-(defun nix-compile (sandbox &rest command)
+(defun nix-compile (sandbox command)
   "Compile a program using the given COMMAND in SANDBOX."
   (interactive "fsandbox: \nMcommand: ")
-  (with-current-buffer (compile (apply 'nix-shell-string sandbox command))
-    (rename-buffer (mapconcat #'identity command " "))
-    (current-buffer)))
+  (compile
+   (combine-and-quote-strings
+    (list "bash" "-c" (nix-shell--source-env-prepend sandbox command)))))
 
 ;;;###autoload
 (defun nix-sandbox/nix-shell (sandbox &rest command)
