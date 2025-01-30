@@ -50,7 +50,7 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
                     "bash -c 'declare +x shellHook; declare -x; declare -xf'"
                     ))
          (env-str (shell-command-to-string command))
-         (tmp-file (make-temp-file (concat (temporary-file-directory) "/nix-sandbox-rc-"))))
+         (tmp-file (make-temp-file (concat (temporary-file-directory) "/" "nix-sandbox-rc-"))))
     (write-region env-str nil tmp-file 'append)
     tmp-file))
 
