@@ -59,11 +59,13 @@ e.g. /home/user/.nix-defexpr/channels/unstable/nixpkgs"
 
 (defun nix-sandbox-rc (sandbox)
   "Return the rc file for the given SANDBOX or create one."
-  (let ((sandbox-abs-path (file-truename sandbox)))
-    (or (gethash sandbox-abs-path nix-sandbox-rc-map)
-        (when-let (sandbox-rc (nix-create-sandbox-rc sandbox-abs-path))
-          (puthash sandbox-abs-path sandbox-rc nix-sandbox-rc-map))
-        (error (format "could not create sandbox for %s" sandbox-abs-path)))))
+  (let* ((sandbox-abs-path (file-truename sandbox))
+         (cache (gethash sandbox-abs-path nix-sandbox-rc-map))
+         (cache-valid? (and cache (file-exists-p cache))))
+    (or (and cache-valid? cache)
+            (when-let (sandbox-rc (nix-create-sandbox-rc sandbox-abs-path))
+              (puthash sandbox-abs-path sandbox-rc nix-sandbox-rc-map))
+            (error (format "could not create sandbox for %s" sandbox-abs-path)))))
 
 ;;;###autoload
 (defun nix-shell-command (sandbox &rest args)
